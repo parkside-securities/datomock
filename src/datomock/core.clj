@@ -1,5 +1,5 @@
 (ns datomock.core
-  (:require [datomic.api :as d]
+  (:require [datomic.client.api :as d]
             [datomock.impl :as impl])
   (:import (datomic Connection Database)))
 

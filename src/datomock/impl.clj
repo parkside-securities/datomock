@@ -1,5 +1,5 @@
 (ns datomock.impl
-  (:require [datomic.api :as d]
+  (:require [datomic.client.api :as d]
             [datomic.promise])
   (:import (datomic Log Database Connection)
            (java.util UUID Date)
@@ -69,12 +69,12 @@
           (and (start-pred tx-res) (end-pred tx-res)))))
     (map #(dissoc % :db/txInstant))))
 
-(defn forked-txRange 
+(defn forked-txRange
   [originLog forkT logVec startT endT]
-  (concat 
+  (concat
     (when (some? originLog)
       (->> (d/tx-range originLog startT endT)
-        ;; NOTE we need this additional filtering step because the originLog has been read 
+        ;; NOTE we need this additional filtering step because the originLog has been read
         ;; _after_ reading the starting-point db, leaving time for additional txes to have been added (Val, 01 Jul 2018)
         (filter (fn [{:as tx-res :keys [t]}]
                   (<= t forkT)))))
