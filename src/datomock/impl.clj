@@ -1,6 +1,5 @@
 (ns datomock.impl
-  (:require [datomic.client.api :as d]
-            [datomic.promise])
+  (:require [datomic.client.api :as d])
   (:import (datomic Log Database Connection)
            (java.util UUID Date)
            (java.util.concurrent BlockingQueue ExecutionException LinkedBlockingDeque)))
@@ -72,13 +71,13 @@
 (defn forked-txRange
   [originLog forkT logVec startT endT]
   (concat
-    (when (some? originLog)
-      (->> (d/tx-range originLog startT endT)
-        ;; NOTE we need this additional filtering step because the originLog has been read
-        ;; _after_ reading the starting-point db, leaving time for additional txes to have been added (Val, 01 Jul 2018)
-        (filter (fn [{:as tx-res :keys [t]}]
-                  (<= t forkT)))))
-    (log-tail-tx-range logVec startT endT)))
+   (when (some? originLog)
+     (->> (d/tx-range originLog startT endT)
+          ;; NOTE we need this additional filtering step because the originLog has been read
+          ;; _after_ reading the starting-point db, leaving time for additional txes to have been added (Val, 01 Jul 2018)
+          (filter (fn [{:as tx-res :keys [t]}]
+                    (<= t forkT)))))
+   (log-tail-tx-range logVec startT endT)))
 
 (defrecord ForkedLog [originLog forkT logVec]
   Log
@@ -87,38 +86,25 @@
 
 (defn transact!
   [a_state a_txq tx-data]
-  (doto (datomic.promise/settable-future)
-    (deliver
-      (loop []
-        (let [old-val @a_state
-              db (:db old-val)
-              tx-res (try (d/with db tx-data)
-                          (catch Throwable err
-                            err
-                            #_(throw (ExecutionException. err))))]
-          (if (instance? Throwable tx-res)
-            ;; NOTE unlike a regular Clojure Promise (as returned by clojure.core/promise),
-            ;; delivering a Throwable will result in throwing when deref'ing,
-            ;; which is the intended behaviour here. (Val, 15 Jun 2018)
-            tx-res
-            (let [new-val (->MockConnState
-                            (:db-after tx-res)
-                            (conj (:logVec old-val) (log-item tx-res)))]
-              (if (compare-and-set! a_state old-val new-val)
-                (do
-                  (when-let [^BlockingQueue txq @a_txq]
-                    (.add ^BlockingQueue txq tx-res))
-                  tx-res)
-                (recur))))
-          )))
-    ))
+  (let [old-val @a_state
+        db (:db old-val)
+        tx-res (d/with db tx-data)
+        new-val (->MockConnState
+                 (:db-after tx-res)
+                 (conj (:logVec old-val) (log-item tx-res)))]
+    (if (compare-and-set! a_state old-val new-val)
+      (do
+        (when-let [^BlockingQueue txq @a_txq]
+          (.add ^BlockingQueue txq tx-res))
+        tx-res)
+      (recur))))
 
 (defrecord MockConnection
-  [a_state,                                                 ;; an atom, holding a MockConnState
-   forkT,                                                   ;; the basis-t of the starting-point db / connection at the time of forking
-   originLog,                                               ;; a Log Value of the origin connection, taken _after_ derefing its db
-   a_txq                                                    ;; an atom, holding the txReportQueue when it exists
-   ]
+    [a_state,                                                 ;; an atom, holding a MockConnState
+     forkT,                                                   ;; the basis-t of the starting-point db / connection at the time of forking
+     originLog,                                               ;; a Log Value of the origin connection, taken _after_ derefing its db
+     a_txq                                                    ;; an atom, holding the txReportQueue when it exists
+     ]
 
   Connection
   (db [_] (:db @a_state))
@@ -130,8 +116,7 @@
   (release [_] (do nil))
   (gcStorage [_ olderThan] (do nil))
 
-  (sync [this] (doto (datomic.promise/settable-future)
-                 (deliver (.db this))))
+  (sync [this] (.db this))
   (sync [this t] (.sync this))
   (syncExcise [this t] (.sync this))
   (syncIndex [this t] (.sync this))
